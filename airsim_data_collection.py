@@ -12,36 +12,34 @@ client.armDisarm(True)
 
 # Take off
 client.takeoffAsync().join()
+time.sleep(2)  # Ensure drone stability
 
-# Create folders for saving images
-for cam in ["front", "left", "right", "bottom"]:
-    os.makedirs(f"airsim_data/{cam}", exist_ok=True)
+# Create folder for saving RGB images
+os.makedirs("airsim_data/rgb", exist_ok=True)
 
 # Move forward and collect images
 for i in range(300):  # Collect 300 images
-    client.moveByVelocityAsync(2, 0, 0, 1).join()  # Slow forward movement
+    client.moveByVelocityAsync(2, 0, 0, 1).join()  # Simple forward motion
 
-    # Capture images from 4 cameras
-    responses = client.simGetImages([
-        airsim.ImageRequest("0", airsim.ImageType.Scene, False, False),  # Front Camera
-        airsim.ImageRequest("1", airsim.ImageType.Scene, False, False),  # Left Camera
-        airsim.ImageRequest("2", airsim.ImageType.Scene, False, False),  # Right Camera
-        airsim.ImageRequest("3", airsim.ImageType.Scene, False, False)   # Bottom Camera
-    ])
+    # Capture only the front camera RGB image
+    response = client.simGetImage("0", airsim.ImageType.Scene)
 
-    # Define camera labels
-    cameras = ["front", "left", "right", "bottom"]
+    if response is None or len(response) == 0:
+        print(f"⚠️ Skipping frame {i} (empty image)")
+        continue  # Skip empty frames
 
-    for idx, response in enumerate(responses):
-        # Convert image to numpy array
-        img = np.frombuffer(response.image_data_uint8, dtype=np.uint8)
-        img = img.reshape(response.height, response.width, 3)
+    # Convert image to numpy array
+    img_data = np.frombuffer(response, dtype=np.uint8)
+    img = cv2.imdecode(img_data, cv2.IMREAD_COLOR)  # Decode image correctly
 
-        # Save image
-        filename = f"airsim_data/{cameras[idx]}/frame_{i}.png"
-        cv2.imwrite(filename, img)
+    if img is None:
+        print(f"⚠️ Failed to decode frame {i}")
+        continue
 
-        print(f"Saved {cameras[idx]} image: {filename}")
+    # Save image
+    filename = f"airsim_data/rgb/frame_{i}.png"
+    cv2.imwrite(filename, img)
+    print(f"✅ Saved RGB image: {filename}")
 
     time.sleep(0.1)  # Small delay
 
