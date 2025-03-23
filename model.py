@@ -37,7 +37,7 @@ class DDDQN(nn.Module):
         super(DDDQN, self).__init__()
         self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.fc1 = nn.Linear(64 * 16 * 16, 128)  # Assuming (64, 16, 16) after conv layers
+        self.fc1 = nn.Linear(64 * 16 * 16, 128)  # Check if input size is correct
         self.fc2 = nn.Linear(128, 3)  # 3 possible actions
 
     def forward(self, x):
@@ -45,9 +45,9 @@ class DDDQN(nn.Module):
         x = torch.max_pool2d(x, 2)
         x = torch.relu(self.conv2(x))
         x = torch.max_pool2d(x, 2)
-        x = x.view(x.size(0), -1)  # Flatten
+        x = x.view(x.size(0), -1)  # Flatten dynamically
         x = torch.relu(self.fc1(x))
-        return torch.softmax(self.fc2(x), dim=1)  # Output action probabilities
+        return self.fc2(x)  # NO softmax here! CrossEntropyLoss expects raw logits.
 
 # Initialize model
 model = DDDQN().to(DEVICE)
@@ -61,10 +61,16 @@ for episode in range(EPISODES):
 
     states = torch.stack(states).to(DEVICE)
     actions = torch.tensor(actions, dtype=torch.long).to(DEVICE)
+    rewards = torch.tensor(rewards, dtype=torch.float32).to(DEVICE)  # Convert to tensor
 
     # Forward pass
     outputs = model(states)
-    loss = criterion(outputs, actions)
+
+    # Compute Q-values using Bellman equation
+    target_q_values = rewards + GAMMA * torch.max(outputs, dim=1)[0].detach()
+
+    # Compute loss
+    loss = criterion(outputs, actions)  # No softmax applied
 
     # Backpropagation
     optimizer.zero_grad()
