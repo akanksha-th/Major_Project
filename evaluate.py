@@ -9,7 +9,7 @@ import cv2
 client = airsim.MultirotorClient()
 client.confirmConnection()
 client.enableApiControl(True)
-client.setCarControls(airsim.CarControls())
+client.armDisarm(True)
 
 # Load trained model
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
