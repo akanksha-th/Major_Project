@@ -6,7 +6,7 @@ from model import DDDQN
 import cv2
 
 # Initialize AirSim client
-client = airsim.CarClient()
+client = airsim.MultirotorClient()
 client.confirmConnection()
 client.enableApiControl(True)
 client.setCarControls(airsim.CarControls())
