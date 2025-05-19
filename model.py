@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 import os
-import gym
 import matplotlib.pyplot as plt
 from collections import deque
 
