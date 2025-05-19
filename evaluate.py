@@ -21,13 +21,11 @@ model.load_state_dict(torch.load("dd_dqn_object_avoidance.pth"))
 model.eval()
 
 ACTIONS = {
-    0: (-0.5, 0.0),  # Left
-    1: (0.5, 0.0),   # Right
-    2: (0.0, 1.0)    # Forward
+    0: (-1.0, 0.0, 0.0),  # Move left (negative X)
+    1: (1.0, 0.0, 0.0),   # Move right (positive X)
+    2: (0.0, 1.5, 0.0)    # Move forward (positive Y)
 }
-
-
-airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True)
+DURATION = 1.0
 
 def preprocess_depth_image(response):
     img1d = np.array(response.image_data_float, dtype=np.float32)
@@ -39,23 +37,24 @@ def preprocess_depth_image(response):
 
 # Run simulation loop
 for step in range(500):
-    responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene, False, False)])
+    responses = client.simGetImages([
+        airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True)
+        ])
     state = preprocess_depth_image(responses[0])
     
     with torch.no_grad():
         q_values = model(state)
         action = torch.argmax(q_values).item()
 
-    steering, throttle = ACTIONS[action]
-    controls = airsim.CarControls()
-    controls.steering = steering
-    controls.throttle = throttle
-    client.moveByVelocityAsync(vx, vy, vz, duration)
+    vx, vy, vz = ACTIONS[action]
+    client.moveByVelocityAsync(vx, vy, vz, DURATION)
 
 
-    print(f"Step {step}: Action {action} (Steering={steering}, Throttle={throttle})")
+    print(f"[{step}] Action {action}: vx={vx}, vy={vy}, vz={vz}")
     time.sleep(0.1)
 
 # Reset AirSim
-client.reset()
-print("✅ Simulation Complete!")
+client.hoverAsync().join()
+client.armDisarm(False)
+client.enableApiControl(False)
+print("✅ Drone simulation complete!")
