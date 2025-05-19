@@ -10,6 +10,9 @@ client = airsim.MultirotorClient()
 client.confirmConnection()
 client.enableApiControl(True)
 client.armDisarm(True)
+client.takeoffAsync().join()
+client.moveByVelocityAsync(0, 0, 0, 1).join()  # small hover
+
 
 # Load trained model
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
