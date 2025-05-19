@@ -32,8 +32,10 @@ def preprocess_depth_image(response):
     img1d = np.array(response.image_data_float, dtype=np.float32)
     img2d = img1d.reshape(response.height, response.width)
     img2d = cv2.resize(img2d, (64, 64))
-    img2d = np.expand_dims(img2d, axis=0)  # (1, 64, 64)
-    return torch.tensor(img2d, dtype=torch.float32).unsqueeze(0).to(DEVICE)
+    img2d = np.clip(img2d, 0, 100)
+    img2d /= 100.0
+    depth_tensor = np.expand_dims(img2d, axis=0)
+    return torch.tensor(depth_tensor, dtype=torch.float32).unsqueeze(0).to(DEVICE), img2d
 
 # === Path recording ===
 path_x, path_y = [], []
@@ -85,6 +87,9 @@ for step in range(500):
 
     print(f"[{step}] Action {action}: vx={vx}, vy={vy}, vz={vz}")
     time.sleep(0.1)
+
+np.save("flight_path.npy", np.array([path_x, path_y]))
+print("📍 Path saved to 'flight_path.npy'")
 
 # Reset AirSim
 client.hoverAsync().join()
