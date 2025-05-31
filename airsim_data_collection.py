@@ -1,8 +1,8 @@
 import airsim
 import os
-import cv2
 import numpy as np
 import time
+import cv2
 
 # Connect to AirSim
 client = airsim.MultirotorClient()
@@ -12,40 +12,47 @@ client.armDisarm(True)
 
 # Take off
 client.takeoffAsync().join()
-time.sleep(2)  # Ensure drone stability
+time.sleep(2)
 
-# Create folder for saving RGB images
-os.makedirs("airsim_data/rgb", exist_ok=True)
+# Create folder to store depth images
+SAVE_DIR = "airsim_data/depth"
+os.makedirs(SAVE_DIR, exist_ok=True)
 
-# Move forward and collect images
-for i in range(300):  # Collect 300 images
-    client.moveByVelocityAsync(2, 0, 0, 1).join()  # Simple forward motion
+# Move forward and collect depth images
+for i in range(300):
+    client.moveByVelocityAsync(2, 0, 0, 1).join()
 
-    # Capture only the front camera RGB image
-    response = client.simGetImage("0", airsim.ImageType.Scene)
+    # Request depth image
+    responses = client.simGetImages([
+        airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, pixels_as_float=True)
+    ])
+    response = responses[0]
 
-    if response is None or len(response) == 0:
-        print(f"⚠️ Skipping frame {i} (empty image)")
-        continue  # Skip empty frames
-
-    # Convert image to numpy array
-    img_data = np.frombuffer(response, dtype=np.uint8)
-    img = cv2.imdecode(img_data, cv2.IMREAD_COLOR)  # Decode image correctly
-
-    if img is None:
-        print(f"⚠️ Failed to decode frame {i}")
+    if response is None or len(response.image_data_float) == 0:
+        print(f"⚠️ Skipping frame {i} (empty depth image)")
         continue
 
-    # Save image
-    filename = f"airsim_data/rgb/frame_{i}.png"
-    cv2.imwrite(filename, img)
-    print(f"✅ Saved RGB image: {filename}")
+    # Convert float array to 2D image
+    img1d = np.array(response.image_data_float, dtype=np.float32)
+    img2d = img1d.reshape(response.height, response.width)
 
-    time.sleep(0.1)  # Small delay
+    # Normalize and scale to 16-bit
+    depth_clipped = np.clip(img2d, 0, 100)
+    depth_normalized = (depth_clipped / 100.0 * 65535).astype(np.uint16)
 
-# Land the drone
+    # Resize to 64x64 if needed
+    depth_resized = cv2.resize(depth_normalized, (64, 64))
+
+    # Save as 16-bit PNG
+    filename = os.path.join(SAVE_DIR, f"depth_{i:04d}.png")
+    cv2.imwrite(filename, depth_resized)
+    print(f"✅ Saved depth image: {filename}")
+
+    time.sleep(0.1)
+
+# Land and reset
 client.landAsync().join()
 client.armDisarm(False)
 client.enableApiControl(False)
 
-print("✅ Data collection complete!")
+print("✅ Depth image data collection complete!")

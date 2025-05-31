@@ -6,25 +6,27 @@ from model import DDDQN
 import matplotlib.pyplot as plt
 import cv2
 
-# Initialize AirSim client
+# Initialize AirSim
 client = airsim.MultirotorClient()
 client.confirmConnection()
 client.enableApiControl(True)
 client.armDisarm(True)
-client.takeoffAsync().join()
-client.moveByVelocityAsync(0, 0, 0, 1).join()  # small hover
 
+print("🚁 Taking off...")
+client.takeoffAsync().join()
+client.moveToZAsync(-3, 1).join()
+time.sleep(2)
 
 # Load trained model
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = DDDQN().to(DEVICE)
-model.load_state_dict(torch.load("dd_dqn_object_avoidance.pth"))
+model = DDDQN(input_channels=1, num_actions=3).to(DEVICE)
+model.load_state_dict(torch.load("dd_dqn_object_avoidance.pth", map_location=DEVICE))
 model.eval()
 
 ACTIONS = {
-    0: (-1.0, 0.0, 0.0),  # Move left (negative X)
-    1: (1.0, 0.0, 0.0),   # Move right (positive X)
-    2: (0.0, 1.5, 0.0)    # Move forward (positive Y)
+    0: (-1.0, 0.0, 0.0),  # Move left
+    1: (1.0, 0.0, 0.0),   # Move right
+    2: (0.0, 1.5, 0.0)    # Move forward
 }
 DURATION = 1.0
 
@@ -32,15 +34,14 @@ def preprocess_depth_image(response):
     img1d = np.array(response.image_data_float, dtype=np.float32)
     img2d = img1d.reshape(response.height, response.width)
     img2d = cv2.resize(img2d, (64, 64))
-    img2d = np.clip(img2d, 0, 100)
-    img2d /= 100.0
-    depth_tensor = np.expand_dims(img2d, axis=0)
-    return torch.tensor(depth_tensor, dtype=torch.float32).unsqueeze(0).to(DEVICE), img2d
+    img2d = np.clip(img2d, 0, 100) / 100.0
+    depth_tensor = torch.tensor(img2d, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(DEVICE)
+    return depth_tensor, img2d
 
-# === Path recording ===
+# Path tracking
 path_x, path_y = [], []
 
-# === Live plot setup ===
+# Live plot
 plt.ion()
 fig, ax = plt.subplots()
 scat, = ax.plot([], [], 'bo-')
@@ -55,14 +56,13 @@ def update_plot():
     fig.canvas.draw()
     fig.canvas.flush_events()
 
-# Run simulation loop
-for step in range(500):
+# Main loop
+for step in range(5000):
     responses = client.simGetImages([
         airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True)
-        ])
+    ])
     state, raw_depth = preprocess_depth_image(responses[0])
-    
-    # Crash detection: too close or actual collision
+
     if np.min(raw_depth) < 1.0:
         print(f"[{step}] ❗ Too close to obstacle. Aborting.")
         break
@@ -71,15 +71,14 @@ for step in range(500):
     if collision_info.has_collided:
         print(f"[{step}] 💥 Collision detected! Ending simulation.")
         break
-    
+
     with torch.no_grad():
         q_values = model(state)
         action = torch.argmax(q_values).item()
 
     vx, vy, vz = ACTIONS[action]
-    client.moveByVelocityAsync(vx, vy, vz, DURATION)
-    
-    # Track position
+    client.moveByVelocityAsync(vx, vy, vz, DURATION).join()
+
     position = client.getMultirotorState().kinematics_estimated.position
     path_x.append(position.x_val)
     path_y.append(position.y_val)
@@ -91,7 +90,6 @@ for step in range(500):
 np.save("flight_path.npy", np.array([path_x, path_y]))
 print("📍 Path saved to 'flight_path.npy'")
 
-# Reset AirSim
 client.hoverAsync().join()
 client.armDisarm(False)
 client.enableApiControl(False)
